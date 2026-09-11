@@ -12,6 +12,9 @@ Apollo Save Tool (PS2) — 中文化脚本 / Chinese localization script
     cd apollo-ps2          # 你的 fork 根目录（含 source/ 与 include/）
     python3 apply_i18n.py
 
+    # 若要把确认/取消按键对调为 ⭕ 确定 / ✕ 返回：
+    python3 apply_i18n.py --swap-buttons
+
 说明 / Notes:
     * 本脚本只修改 source/*.c 中的用户可见字符串，不改变逻辑。
     * 渲染中文依赖 DATA/FONT.OTF（含 CJK 字形的 TrueType/OpenType 字体）。
@@ -20,6 +23,7 @@ Apollo Save Tool (PS2) — 中文化脚本 / Chinese localization script
       所以只要提供含中文字形的 FONT.OTF 即可显示中文，无需改动字体加载代码。
 """
 
+import argparse
 import os
 import re
 import sys
@@ -77,7 +81,7 @@ TRANSLATIONS = [
     ("Settings", "设置"),
 
     # ---------- menu_about.c : 关于页 ----------
-    ("PlayStation 2 version", "PlayStation 2 版本"),
+    ("PlayStation 2 version", "PS2 A9VG汉化版"),
     ("In memory of", "纪念"),
     ("About", "关于"),
     ("Developer", "开发者"),
@@ -178,6 +182,29 @@ TRANSLATIONS = [
 ]
 
 
+# 当启用 --swap-buttons 时，需要把译文里的 \x10（X/确认）与 \x13（O/取消）对调的字符串。
+# 注意：十六进制编辑器的帮助栏（"Value Up ... Exit"）不在这里，因为该界面 X/O 功能不是确认/取消。
+BUTTON_SWAP_KEYS = {
+    "\\x10 Select    \\x13 Back    \\x12 Details    \\x11 Refresh",
+    "\\x10 Select    \\x13 Back    \\x11 Refresh",
+    "\\x10 Select    \\x12 View Code    \\x13 Back",
+    "\\x10 Select    \\x13 Back",
+    "\\x13 Back",
+    "\\x10 OK   \\x13 Cancel",
+    "\\x10 OK",
+    "\\x10 Yes   \\x13 No",
+}
+
+
+def swap_button_codes(s):
+    """把字符串里的 \x10 与 \x13 对调，用于"⭕ 确定 / ✕ 取消"模式。"""
+    # 用占位符避免二次对调
+    s = s.replace("\\x10", "\x00BTN_X\x00")
+    s = s.replace("\\x13", "\\x10")
+    s = s.replace("\x00BTN_X\x00", "\\x13")
+    return s
+
+
 def make_literal_pattern(en):
     """构造只匹配『完整引号字符串字面量』的正则。
 
@@ -189,7 +216,7 @@ def make_literal_pattern(en):
     return re.compile(r'(["\'])(' + esc + r')(\1)')
 
 
-def apply_file(path):
+def apply_file(path, swap_buttons=False):
     with open(path, "r", encoding="utf-8") as f:
         data = f.read()
 
@@ -198,6 +225,10 @@ def apply_file(path):
 
     # 1) 字符串翻译：仅替换『完整引号字符串字面量』，避免误伤代码与长串
     for en, zh in TRANSLATIONS:
+        # 若启用按钮对调，把帮助栏/对话框里的 \x10 与 \x13 对调
+        if swap_buttons and en in BUTTON_SWAP_KEYS:
+            zh = swap_button_codes(zh)
+
         pat = make_literal_pattern(en)
 
         # 用函数做替换，避免 zh 里的 \x10 / \1 等被当作反向引用解析
@@ -236,7 +267,98 @@ def apply_file(path):
     return 0
 
 
+def _swap_cross_circle_in_function(data, func_name, mode='swap'):
+    """在指定函数体内对调（或单向替换）PAD_CROSS 与 PAD_CIRCLE 两个 token。
+
+    mode='swap'      : X↔O 对调（用于同时存在"确认/取消"两个分支的菜单）
+    mode='circle_to_cross' : 仅把 O 改成 X（用于只有"返回"操作的界面，保持 X=取消统一）
+    """
+    # 函数可能是 static int foo() 或 int foo() 或 static void foo() 等
+    pattern = re.compile(rf'(?:static\s+)?(?:void|int)\s+{re.escape(func_name)}\s*\([^)]*\)\s*\{{', re.DOTALL)
+    m = pattern.search(data)
+    if not m:
+        return data
+
+    start = m.end() - 1          # 函数体开括号 '{' 的位置
+    depth = 1
+    i = start + 1
+    while i < len(data) and depth > 0:
+        if data[i] == '{':
+            depth += 1
+        elif data[i] == '}':
+            depth -= 1
+        i += 1
+    end = i                      # 函数体闭括号之后一位
+
+    body = data[start:end]
+    if mode == 'swap':
+        body = body.replace('PAD_CROSS', 'PAD_CROSS_TEMP')
+        body = body.replace('PAD_CIRCLE', 'PAD_CROSS')
+        body = body.replace('PAD_CROSS_TEMP', 'PAD_CIRCLE')
+    elif mode == 'circle_to_cross':
+        body = body.replace('PAD_CIRCLE', 'PAD_CROSS')
+
+    return data[:start] + body + data[end:]
+
+
+def swap_menu_buttons(path):
+    """把 menu_main.c 里菜单导航的确认/取消按键对调：⭕ 确定，✕ 返回/取消。"""
+    with open(path, "r", encoding="utf-8") as f:
+        data = f.read()
+
+    funcs = {
+        'doMainMenu': 'swap',
+        'doSaveMenu': 'swap',
+        'doOptionsMenu': 'swap',
+        'doPatchMenu': 'swap',
+        'doCodeOptionsMenu': 'swap',
+        # 只有"返回"的界面，把 O 返回改成 X 返回，保持 X=取消统一
+        'doAboutMenu': 'circle_to_cross',
+        'doSaveDetailsMenu': 'circle_to_cross',
+        'doPatchViewMenu': 'circle_to_cross',
+        # doHexEditor 不动：X/Square 是数值加减，Circle 是保存并退出，不属于确认/取消
+    }
+
+    original = data
+    for func_name, mode in funcs.items():
+        data = _swap_cross_circle_in_function(data, func_name, mode)
+
+    if data != original:
+        with open(path, "w", encoding="utf-8") as f:
+            f.write(data)
+        return True
+    return False
+
+
+def swap_dialog_buttons(path):
+    """把 dialog.c 里对话框的 OK/Cancel/Yes/No 按键对调：⭕ 确定，✕ 取消。"""
+    with open(path, "r", encoding="utf-8") as f:
+        data = f.read()
+
+    funcs = {
+        'show_dialog': 'swap',
+        'show_multi_dialog': 'swap',
+    }
+
+    original = data
+    for func_name, mode in funcs.items():
+        data = _swap_cross_circle_in_function(data, func_name, mode)
+
+    if data != original:
+        with open(path, "w", encoding="utf-8") as f:
+            f.write(data)
+        return True
+    return False
+
+
 def main():
+    parser = argparse.ArgumentParser(description="Apollo Save Tool (PS2) 中文化脚本")
+    parser.add_argument(
+        "--swap-buttons", action="store_true",
+        help="对调确认/取消按键：⭕ (Circle) 确定，✕ (Cross) 返回/取消（默认：X 确定，O 返回）"
+    )
+    args = parser.parse_args()
+
     if not os.path.isdir(SRC_DIR):
         print("错误：未找到 source/ 目录。请在 apollo-ps2 仓库根目录运行本脚本。")
         print("Error: source/ not found. Run this script at the repo root.")
@@ -249,7 +371,7 @@ def main():
             continue
         path = os.path.join(SRC_DIR, name)
         try:
-            n = apply_file(path)
+            n = apply_file(path, swap_buttons=args.swap_buttons)
         except UnicodeDecodeError as e:
             print(f"跳过 {name}（编码错误，请确认文件为 UTF-8）：{e}")
             continue
@@ -257,6 +379,19 @@ def main():
             print(f"已修改 {name}（{n} 处）")
             changed_files += 1
             total += n
+
+    if args.swap_buttons:
+        menu_path = os.path.join(SRC_DIR, "menu_main.c")
+        if os.path.exists(menu_path):
+            if swap_menu_buttons(menu_path):
+                print("已对调 menu_main.c 的确认/取消按键映射")
+                changed_files += 1
+
+        dialog_path = os.path.join(SRC_DIR, "dialog.c")
+        if os.path.exists(dialog_path):
+            if swap_dialog_buttons(dialog_path):
+                print("已对调 dialog.c 的对话框按键映射")
+                changed_files += 1
 
     print(f"\n完成：共修改 {changed_files} 个文件，{total} 处字符串。")
     print("Done: modified", changed_files, "files,", total, "strings.")
