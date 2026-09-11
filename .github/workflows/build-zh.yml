@@ -67,15 +67,20 @@ jobs:
           ls -la
           echo "data/ 目录内容："
           ls -la data/ || true
-          # 字体优先级：FONT_MID.OTF（含常见繁体，推荐）> FONT_LITE.OTF（极小）> FONT.OTF（完整）
-          if [ -f "data/FONT_MID.OTF" ]; then
+          # 字体优先级（优先体积小且转为 TrueType 轮廓的版本，PS2 上更稳定）：
+          # FONT_MIN.ttf > FONT_MIN.OTF > FONT_MID.OTF > FONT_LITE.OTF > FONT.OTF
+          if [ -f "data/FONT_MIN.ttf" ]; then
+            FONT_NAME="FONT_MIN.ttf"
+          elif [ -f "data/FONT_MIN.OTF" ]; then
+            FONT_NAME="FONT_MIN.OTF"
+          elif [ -f "data/FONT_MID.OTF" ]; then
             FONT_NAME="FONT_MID.OTF"
           elif [ -f "data/FONT_LITE.OTF" ]; then
             FONT_NAME="FONT_LITE.OTF"
           elif [ -f "data/FONT.OTF" ]; then
             FONT_NAME="FONT.OTF"
           else
-            echo "❌ 错误：仓库根目录下未找到 data/FONT_MID.OTF / FONT_LITE.OTF / FONT.OTF。"
+            echo "❌ 错误：仓库根目录下未找到 data/FONT_MIN.ttf / FONT_MIN.OTF / FONT_MID.OTF / FONT_LITE.OTF / FONT.OTF。"
             echo "   请把字体文件放到仓库根目录的 data/ 下，并提交后再运行工作流。"
             exit 1
           fi
