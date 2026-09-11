@@ -21,10 +21,10 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: 应用中文翻译 (apply_i18n.py)
+      - name: 应用中文翻译 (apply_i18n.py) + ⭕确定/✕返回
         run: |
           apk add python3 || true
-          python3 apply_i18n.py
+          python3 apply_i18n.py --swap-buttons
 
       - name: Install build dependencies
         run: |
