@@ -6,9 +6,7 @@
 name: PS2 Build (中文版)
 
 on:
-  push:
-    branches: [main, master]
-  workflow_dispatch:   # 允许在 Actions 页手动点 “Run workflow” 触发
+  workflow_dispatch:   # 仅在 Actions 页手动点 “Run workflow” 触发，push 不自动编译
 
 env:
   BUILD_TYPE: Release
@@ -63,10 +61,33 @@ jobs:
       - name: Build project
         run: make
 
+      - name: 检查字体文件是否已提交
+        run: |
+          echo "当前仓库根目录内容："
+          ls -la
+          echo "data/ 目录内容："
+          ls -la data/ || true
+          # 字体优先级：FONT_MID.OTF（含常见繁体，推荐）> FONT_LITE.OTF（极小）> FONT.OTF（完整）
+          if [ -f "data/FONT_MID.OTF" ]; then
+            FONT_NAME="FONT_MID.OTF"
+          elif [ -f "data/FONT_LITE.OTF" ]; then
+            FONT_NAME="FONT_LITE.OTF"
+          elif [ -f "data/FONT.OTF" ]; then
+            FONT_NAME="FONT.OTF"
+          else
+            echo "❌ 错误：仓库根目录下未找到 data/FONT_MID.OTF / FONT_LITE.OTF / FONT.OTF。"
+            echo "   请把字体文件放到仓库根目录的 data/ 下，并提交后再运行工作流。"
+            exit 1
+          fi
+          echo "FONT_NAME=${FONT_NAME}" >> $GITHUB_ENV
+          echo "✅ 将使用字体：${FONT_NAME}"
+
       - name: 复制中文字体到部署目录
         run: |
           mkdir -p APOLLO/DATA
-          cp DATA/FONT.OTF APOLLO/DATA/FONT.OTF
+          cp "data/${FONT_NAME}" APOLLO/DATA/FONT.OTF
+          echo "部署字体大小："
+          ls -lh APOLLO/DATA/FONT.OTF
 
       - name: Compress binary
         run: |
