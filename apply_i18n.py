@@ -394,11 +394,100 @@ def swap_options_icons(path):
     return False
 
 
+def embed_font():
+    """把中文字体作为二进制资源嵌入 ELF，运行时无需外挂 FONT.OTF。
+
+    实现原理：
+    - 利用 CMakeLists.txt 已有的 add_resources()（ld -r -b binary），把 data/FONT.OTF
+      链接进 ELF，生成 _binary_data_FONT_OTF_start / _end / _size 符号。
+    - 修改 source/main.c 的 TTFLoadFont() 调用，从文件加载改为内存加载。
+
+    字体选择优先级（体积小优先，兼顾繁体常用字）：
+      FONT_MID.OTF（1.4 MB，推荐）> FONT_LITE.OTF > FONT.OTF
+    """
+    data_dir = os.path.join(REPO, "data")
+    font_dst = os.path.join(data_dir, "FONT.OTF")
+
+    candidates = [
+        ("FONT_MID.OTF", "data/FONT_MID.OTF"),
+        ("FONT_LITE.OTF", "data/FONT_LITE.OTF"),
+        ("FONT.OTF", "data/FONT.OTF"),
+    ]
+    font_src = None
+    font_name = None
+    for name, rel in candidates:
+        p = os.path.join(REPO, rel)
+        if os.path.exists(p):
+            font_src = p
+            font_name = name
+            break
+
+    if not font_src:
+        print("⚠️  未找到可嵌入的字体（data/FONT_MID.OTF、FONT_LITE.OTF、FONT.OTF），跳过嵌入。")
+        return False
+
+    # 保证编译时 CMake 的 file(GLOB) 能找到 FONT.OTF
+    os.makedirs(data_dir, exist_ok=True)
+    with open(font_src, "rb") as fsrc, open(font_dst, "wb") as fdst:
+        fdst.write(fsrc.read())
+    print(f"✅ 已把 {font_name} 复制为 data/FONT.OTF，准备嵌入 ELF（{os.path.getsize(font_dst)/1024:.0f} KB）。")
+
+    # 修改 CMakeLists.txt：把 data/*.OTF 加入资源 GLOB
+    cmake_path = os.path.join(REPO, "CMakeLists.txt")
+    if os.path.exists(cmake_path):
+        with open(cmake_path, "r", encoding="utf-8") as f:
+            data = f.read()
+        old_line = "file(GLOB res_files RELATIVE\n  ${CMAKE_SOURCE_DIR}\n  data/*.png\n  data/*.irx\n  data/*.ahx\n)"
+        new_line = "file(GLOB res_files RELATIVE\n  ${CMAKE_SOURCE_DIR}\n  data/*.png\n  data/*.irx\n  data/*.ahx\n  data/*.OTF\n)"
+        if "data/*.OTF" not in data:
+            data = data.replace(old_line, new_line)
+            with open(cmake_path, "w", encoding="utf-8") as f:
+                f.write(data)
+            print("✅ 已修改 CMakeLists.txt，把 data/*.OTF 加入二进制资源列表。")
+        else:
+            print("ℹ️  CMakeLists.txt 已包含 data/*.OTF，无需重复修改。")
+
+    # 修改 main.c：文件加载 -> 内存加载
+    main_path = os.path.join(SRC_DIR, "main.c")
+    if os.path.exists(main_path):
+        with open(main_path, "r", encoding="utf-8") as f:
+            data = f.read()
+
+        original = data
+        # 在 LoadTextures_Menu 里添加外部符号声明，并替换 TTFLoadFont 调用
+        old_load = ('\tif (TTFLoadFont(1, APOLLO_APP_PATH "DATA/FONT.OTF", NULL, 0) != SUCCESS)\n'
+                    '\t\tLOG("No extra font found for UTF-8 support!");')
+        new_load = ('\textern unsigned char _binary_data_FONT_OTF_start[];\n'
+                    '\textern unsigned char _binary_data_FONT_OTF_end[];\n'
+                    '\tif (TTFLoadFont(1, NULL, _binary_data_FONT_OTF_start,\n'
+                    '\t\t(int)(_binary_data_FONT_OTF_end - _binary_data_FONT_OTF_start)) != SUCCESS)\n'
+                    '\t\tLOG("No extra font found for UTF-8 support!");')
+        data = data.replace(old_load, new_load)
+
+        # 旧版可能用单空格缩进
+        old_load2 = ('if (TTFLoadFont(1, APOLLO_APP_PATH "DATA/FONT.OTF", NULL, 0) != SUCCESS)\n'
+                     '\tLOG("No extra font found for UTF-8 support!");')
+        data = data.replace(old_load2, new_load.replace('\t', '', 1))
+
+        if data != original:
+            with open(main_path, "w", encoding="utf-8") as f:
+                f.write(data)
+            print("✅ 已修改 source/main.c：字体改为从 ELF 内置内存加载。")
+        else:
+            print("ℹ️  source/main.c 已经是内存加载或未找到原语句，跳过。")
+
+    return True
+
+
 def main():
     parser = argparse.ArgumentParser(description="Apollo Save Tool (PS2) 中文化脚本")
     parser.add_argument(
         "--swap-buttons", action="store_true",
         help="对调确认/取消按键：⭕ (Circle) 确定，✕ (Cross) 返回/取消（默认：X 确定，O 返回）"
+    )
+    parser.add_argument(
+        "--embed-font", action="store_true",
+        help="把 data/ 下的中文字体（优先 FONT_MID.OTF）作为二进制资源嵌入 ELF，无需外挂字体文件"
     )
     args = parser.parse_args()
 
@@ -441,6 +530,10 @@ def main():
             if swap_options_icons(options_path):
                 print("已修改 menu_options.c 的设置项图标为 ⭕")
                 changed_files += 1
+
+    if args.embed_font:
+        if embed_font():
+            changed_files += 1
 
     print(f"\n完成：共修改 {changed_files} 个文件，{total} 处字符串。")
     print("Done: modified", changed_files, "files,", total, "strings.")
