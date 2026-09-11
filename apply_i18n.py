@@ -152,19 +152,42 @@ TRANSLATIONS = [
     (" Copy save game to Memory Card", " 复制存档到记忆卡"),
     (" Extract Archives (Zip)", " 解压压缩包 (Zip)"),
     (" Local Web Server (full system access)", " 本地网页服务器（完全系统访问）"),
+    ("Extract %s%s", "解压 %s%s"),
     (" Bulk Save Management", " 批量存档管理"),
     (" Copy selected Saves to Memory Card", " 复制所选存档到记忆卡"),
     (" Copy all Saves to Memory Card", " 复制所有存档到记忆卡"),
     (" Copy selected Saves to Backup Storage", " 复制所选存档到备份存储"),
     (" Copy all Saves to Backup Storage", " 复制所有存档到备份存储"),
-    (".PSU Export selected Saves to Backup Storage", ".PSU 导出所选存档到备份存储"),
-    (".PSU Export All Saves to Backup Storage", ".PSU 导出所有存档到备份存储"),
+    (" .PSU Export selected Saves to Backup Storage", " .PSU 导出所选存档到备份存储"),
+    (" .PSU Export All Saves to Backup Storage", " .PSU 导出所有存档到备份存储"),
     (" Memory Card Management", " 记忆卡管理"),
     (" Export selected Saves to Storage (.PSV)", " 导出所选存档到存储 (.PSV)"),
     (" Export all Saves to Storage (.PSV)", " 导出所有存档到存储 (.PSV)"),
     (" Export Memory Card to .VM1 format", " 导出记忆卡为 .VM1 格式"),
     (" Export Memory Card to .VMP format", " 导出记忆卡为 .VMP 格式"),
     (" Import Saves to Virtual Card", " 导入存档到虚拟卡"),
+
+    # ---------- saves.c : 子菜单目标位置选项 ----------
+    ("Copy Save to Mass Storage", "复制存档到外部存储"),
+    ("Copy Save to Memory Card", "复制存档到记忆卡"),
+    ("Export Zip to Mass Storage", "导出 Zip 到外部存储"),
+    ("Export .MCS to Storage", "导出 .MCS 到存储"),
+    ("Export .PSX to Storage", "导出 .PSX 到存储"),
+    ("Export .PSV to Storage", "导出 .PSV 到存储"),
+    ("Export .PSU to Storage", "导出 .PSU 到存储"),
+    ("Export .CBS to Storage", "导出 .CBS 到存储"),
+    ("Save successfully exported to:\\n%s", "存档已成功导出到：\\n%s"),
+    ("Copy .MCS Save to Storage", "复制 .MCS 存档到存储"),
+    ("Copy .PSV Save to Storage", "复制 .PSV 存档到存储"),
+    ("Copy .PSX Save to Storage", "复制 .PSX 存档到存储"),
+    ("Download to Mass Storage", "下载到外部存储"),
+    ("Copy Saves to MemCard", "复制存档到记忆卡"),
+    ("Copy Saves to Backup Storage", "复制存档到备份存储"),
+    ("Export Saves to Storage", "导出存档到存储"),
+    ("Save .VM1 Memory Card to Storage", "保存 .VM1 记忆卡到存储"),
+    ("Save .VMP Memory Card to Storage", "保存 .VMP 记忆卡到存储"),
+    ("Import to MemCard", "导入到记忆卡"),
+    ("Copy to Storage (%s)", "复制到存储 (%s)"),
 
     # ---------- saves.c : 详情页字段标签 ----------
     ("----- Packed PS%d Save -----", "----- 打包的 PS%d 存档 -----"),
@@ -351,6 +374,26 @@ def swap_dialog_buttons(path):
     return False
 
 
+def swap_options_icons(path):
+    """把 menu_options.c 里 APP_OPTION_CALL 项的图标从 X 改为 O。
+
+    因为按钮对调后，⭕ (Circle) 变成"确定/执行"，设置页里"清除缓存"和"启用日志"
+    这两个 CALL 项右侧的图标应该显示圆圈而不是叉。
+    """
+    with open(path, "r", encoding="utf-8") as f:
+        data = f.read()
+
+    original = data
+    # menu_options.c 中只有 APP_OPTION_CALL 分支用到 footer_ico_cross_png_index
+    data = data.replace('footer_ico_cross_png_index', 'footer_ico_circle_png_index')
+
+    if data != original:
+        with open(path, "w", encoding="utf-8") as f:
+            f.write(data)
+        return True
+    return False
+
+
 def main():
     parser = argparse.ArgumentParser(description="Apollo Save Tool (PS2) 中文化脚本")
     parser.add_argument(
@@ -391,6 +434,12 @@ def main():
         if os.path.exists(dialog_path):
             if swap_dialog_buttons(dialog_path):
                 print("已对调 dialog.c 的对话框按键映射")
+                changed_files += 1
+
+        options_path = os.path.join(SRC_DIR, "menu_options.c")
+        if os.path.exists(options_path):
+            if swap_options_icons(options_path):
+                print("已修改 menu_options.c 的设置项图标为 ⭕")
                 changed_files += 1
 
     print(f"\n完成：共修改 {changed_files} 个文件，{total} 处字符串。")
