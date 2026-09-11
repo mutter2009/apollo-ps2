@@ -1,7 +1,8 @@
-# Apollo Save Tool (PS2) — 中文版在线编译工作流
+# Apollo Save Tool (PS2) — 中文版在线编译工作流（字体内嵌版）
 # 用法：把本文件放到仓库的 .github/workflows/ 下（例如 build-zh.yml），
-# 并确保仓库根目录已有 apply_i18n.py 与 DATA/FONT.OTF，然后 push / 手动触发。
-# 编译完成后到 Actions 标签页下载产物（APOLLO.ELF + APOLLO/DATA/FONT.OTF）。
+# 并确保仓库根目录已有 apply_i18n.py 与 data/FONT_MID.OTF（或 FONT_LITE.OTF / FONT.OTF），
+# 然后 push / 手动触发。
+# 编译完成后到 Actions 标签页下载产物（APOLLO.ELF，字体已嵌入 ELF 内部）。
 
 name: PS2 Build (中文版)
 
@@ -21,10 +22,10 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: 应用中文翻译 (apply_i18n.py) + ⭕确定/✕返回
+      - name: 应用中文翻译 + ⭕确定/✕返回 + 嵌入字体到 ELF
         run: |
           apk add python3 || true
-          python3 apply_i18n.py --swap-buttons
+          python3 apply_i18n.py --swap-buttons --embed-font
 
       - name: Install build dependencies
         run: |
@@ -67,18 +68,18 @@ jobs:
           ls -la
           echo "data/ 目录内容："
           ls -la data/ || true
-          # 字体优先级（优先体积小且转为 TrueType 轮廓的版本，PS2 上更稳定）：
-          # FONT_MIN.ttf > FONT_MIN.OTF > FONT_MID.OTF > FONT_LITE.OTF > FONT.OTF
-          if [ -f "data/FONT_MIN.ttf" ]; then
-            FONT_NAME="FONT_MIN.ttf"
-          elif [ -f "data/FONT_MIN.OTF" ]; then
-            FONT_NAME="FONT_MIN.OTF"
-          elif [ -f "data/FONT_MID.OTF" ]; then
+          # 字体优先级（嵌入 ELF 时优先体积适中且覆盖繁体常用字的版本）：
+          # FONT_MID.OTF（1.4 MB，推荐）> FONT_LITE.OTF > FONT.OTF > FONT_MIN.ttf > FONT_MIN.OTF
+          if [ -f "data/FONT_MID.OTF" ]; then
             FONT_NAME="FONT_MID.OTF"
           elif [ -f "data/FONT_LITE.OTF" ]; then
             FONT_NAME="FONT_LITE.OTF"
           elif [ -f "data/FONT.OTF" ]; then
             FONT_NAME="FONT.OTF"
+          elif [ -f "data/FONT_MIN.ttf" ]; then
+            FONT_NAME="FONT_MIN.ttf"
+          elif [ -f "data/FONT_MIN.OTF" ]; then
+            FONT_NAME="FONT_MIN.OTF"
           else
             echo "❌ 错误：仓库根目录下未找到 data/FONT_MIN.ttf / FONT_MIN.OTF / FONT_MID.OTF / FONT_LITE.OTF / FONT.OTF。"
             echo "   请把字体文件放到仓库根目录的 data/ 下，并提交后再运行工作流。"
@@ -87,23 +88,20 @@ jobs:
           echo "FONT_NAME=${FONT_NAME}" >> $GITHUB_ENV
           echo "✅ 将使用字体：${FONT_NAME}"
 
-      - name: 复制中文字体到部署目录
+      - name: 确认嵌入字体信息
         run: |
-          mkdir -p APOLLO/DATA
-          cp "data/${FONT_NAME}" APOLLO/DATA/FONT.OTF
-          echo "部署字体大小："
-          ls -lh APOLLO/DATA/FONT.OTF
+          echo "✅ 字体 ${FONT_NAME} 已通过 --embed-font 嵌入 ELF，运行时无需外置 FONT.OTF。"
+          ls -lh "data/FONT.OTF"
 
       - name: Compress binary
         run: |
           ps2-packer apollo-ps2.elf APOLLO.ELF
           echo "sha_name=$(echo ${GITHUB_SHA} | cut -c1-8)" >> $GITHUB_ENV
 
-      - name: Upload application (ELF + 字体)
+      - name: Upload application (ELF，已内嵌字体)
         uses: actions/upload-artifact@v4
         with:
           name: apollo-ps2-zh_${{ env.sha_name }}
           path: |
             APOLLO.ELF
-            APOLLO/DATA/FONT.OTF
           if-no-files-found: error
