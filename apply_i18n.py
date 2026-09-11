@@ -27,8 +27,11 @@ import sys
 REPO = os.path.dirname(os.path.abspath(__file__))
 SRC_DIR = os.path.join(REPO, "source")
 
-# 需要把 DrawStringMono（位图字体，无法显示中文）替换为 DrawString（TTF）的文件
-# 注意：用负向后顾确保不会误改 DrawFormatStringMono（十六进制编辑器专用，纯 ASCII）
+# 需要把 DrawStringMono（位图字体，无法显示中文）替换为 DrawString（TTF）的文件。
+# 注意：
+#  - 用负向后顾确保不会误改 DrawFormatStringMono（十六进制编辑器专用，纯 ASCII）。
+#  - draw.c 特殊处理：其「加载中」画面运行在独立线程，FreeType 非线程安全，
+#    那一行的 DrawStringMono 必须保留（见 apply_file 内的还原逻辑），否则进记忆卡会卡死。
 MONO_TO_TTF_FILES = ["draw.c", "menu_about.c"]
 
 # 翻译表： (英文原文, 中文译文)
@@ -60,7 +63,8 @@ TRANSLATIONS = [
     ("Select Memory Card", "选择记忆卡"),
     ("Memory Card 1", "记忆卡 1"),
     ("Memory Card 2", "记忆卡 2"),
-    ("Loading saves...", "正在加载存档..."),
+    # 注意：加载画面运行在独立线程，FreeType 非线程安全，必须保持位图字体（只能显示拉丁字符），
+    # 因此「Loading saves...」故意不翻译，避免中文在该画面显示为方块或触发多线程崩溃。
     ("No save-games found", "未找到存档"),
     ("Exit the app?", "退出程序？"),
     ("Patch view", "补丁查看"),
@@ -210,6 +214,17 @@ def apply_file(path):
         # 负向后顾：DrawFormatStringMono（十六进制编辑器，纯 ASCII）不含子串
         # "DrawStringMono"，因此不会被误改；这里再保险地排除字母前缀。
         new_data, n = re.subn(r'(?<![A-Za-z])DrawStringMono\(', 'DrawString(', data)
+
+        # draw.c 的「加载中」画面运行在独立 SDL 线程（loading_screen_thread）里，
+        # 而 FreeType 不是线程安全的。原版在那里用位图字体 DrawStringMono，
+        # 若改成 DrawString（FreeType）会让主线程与加载线程同时访问 FreeType，
+        # 在 PS2 上直接卡死/崩溃。所以必须把这唯一一行还原为位图字体。
+        if os.path.basename(path) == "draw.c":
+            new_data = new_data.replace(
+                'DrawString(0, SCREEN_HEIGHT - 120, (char*) user_data);',
+                'DrawStringMono(0, SCREEN_HEIGHT - 120, (char*) user_data);'
+            )
+
         if n:
             data = new_data
             count += n
