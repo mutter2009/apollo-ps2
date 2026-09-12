@@ -53,7 +53,7 @@ TRANSLATIONS = [
     ("\\x10 Select    \\x13 Back    \\x12 Details    \\x11 Refresh",
      "\\x10 选择    \\x13 返回    \\x12 详情    \\x11 刷新"),
     ("\\x10 Value Up  \\x11 Value Down   \\x13 Exit",
-     "\\x10 上移  \\x11 下移   \\x13 退出"),
+     "\\x10 加  \\x11 减   \\x13 保存退出"),
     ("\\x10 Select    \\x13 Back    \\x11 Refresh",
      "\\x10 选择    \\x13 返回    \\x11 刷新"),
     ("\\x10 Select    \\x12 View Code    \\x13 Back",
